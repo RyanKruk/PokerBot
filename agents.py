@@ -165,8 +165,10 @@ class PolicyAgent(Agent):
         action_chance = np.random.uniform()    #generate a random number to decide what to do
         if action_chance < float(fold):
             a = Action.FOLD    #set the relevant action
+            bet_ratio = 0
         elif action_chance < float(fold) + float(call):
             a = Action.CALL
+            bet_ratio = 0
         else:    #if not...
             a = Action.BET    #set the relevant action
             min_bet_size, max_bet_size = state[-2], state[-1]    #pull out the min and max bet sizes
@@ -201,19 +203,21 @@ class PolicyAgent(Agent):
                 batch -- a list of dictionary containing episode histories
         '''
         objective = []    #init the objectives per episode   
-        for j in range(self.config['N']):    #loop over episodes
+        for j in range(self.config['N']):    #loop over games
             batch_j = batch[j]    #pull out episode j
-            log_probs = []    #init the log probs for this episode
-            for s, a in zip(batch_j['states'][:len(batch_j['states'])-1], batch_j['actions']):    #loop over state action pairs
-                log_prob = self.action_probs(a, s)    #compute the log prob for this state action pair
-                log_probs.append(log_prob)    #record
-            log_probs = torch.stack(log_probs)    #reshape to compute gradient over the whole episode
-            if self.config['causal_return']:    #if we use causal returns...
-                batch_j_reward = batch_j['causal_return']    #set that
-            else:    #if not...
-                batch_j_reward = batch_j['total_return']    #use the total discounted reward
+            
+            for states, actions, total_return in zip(batch_j['states'], batch_j['actions'], batch_j['total_return']):    #loop over state action pairs
+                log_probs = []    #init the log probs for this episode
+                for s, a in zip(states[:len(states)-1], actions):    #loop over state action pairs
+                    log_prob = self.action_probs(a, s)    #compute the log prob for this state action pair
+                    log_probs.append(log_prob)    #record
+                log_probs = torch.stack(log_probs)    #reshape to compute gradient over the whole episode
+                if self.config['causal_return']:    #if we use causal returns...
+                    batch_j_reward = batch_j['causal_return']    #set that
+                else:    #if not...
+                    batch_j_reward = total_return    #use the total discounted reward
 
-            objective.append(self.objective(log_probs, batch_j_reward, batch_j['baseline']))    #compute the objective function and record
+            objective.append(self.objective(log_probs, batch_j_reward, 0))    #compute the objective function and record
         
         objective = torch.mean(torch.stack(objective))    #reshape
         
@@ -244,4 +248,3 @@ class PolicyAgent(Agent):
             num_actions += 1
 
         return fold, call, bet
-
